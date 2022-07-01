@@ -166,8 +166,8 @@ queue<string> adb_shell(const string& command, bool getStderr = false)
     string actual_command;
     actual_command.assign(command);
     //adb_shell_escape_command(actual_command);
-    actual_command.insert(0, "adb shell \"");
-    actual_command.append("\"");
+    actual_command.insert(0, "adb shell \"su -c \'");
+    actual_command.append("\'\"");
     if (getStderr) actual_command.append(" 2>&1");
     return exec_command(actual_command);
 }
@@ -197,6 +197,7 @@ void shell_escape_command(string& cmd)
  */
 void adb_shell_escape_command(string& cmd)
 {
+    string_replacer(cmd," ","\\ ");
     string_replacer(cmd,"\\","\\\\");
     string_replacer(cmd,"(","\\(");
     string_replacer(cmd,")","\\)");
@@ -263,7 +264,7 @@ void makeTmpDir(void) {
 void adb_push_pull_cmd(string& cmd, const bool push,
 		       const string& local_path, const string& remote_path)
 {
-    cmd.assign("adb ");
+    cmd.assign("adb-root.py ");
     cmd.append((push ? "push '" : "pull '"));
     cmd.append((push ? local_path : remote_path));
     cmd.append("' '");
@@ -424,9 +425,9 @@ static int adb_getattr(const char *path, struct stat *stbuf)
     vector<string> output_chunk;
     if (fileData.find(path_string) ==  fileData.end()
 	|| fileData[path_string].timestamp + 30 < time(NULL)) {
-        string command = "ls -l -a -d '";
+        string command = "ls -l -a -d \\\"";
         command.append(path_string);
-        command.append("'");
+        command.append("\\\"");
         output = adb_shell(command, true);
         if (output.empty()) return -EAGAIN; /* no phone */
         // error format: "/sbin/healthd: Permission denied"
@@ -591,9 +592,9 @@ static int adb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     shell_escape_path(path_string);
 
     queue<string> output;
-    string command = "ls -l -a '";
+    string command = "ls -l -a \\\"";
     command.append(path_string);
-    command.append("'");
+    command.append("\\\"");
     output = adb_shell(command);
 
     /* cannot tell between "no phone" and "empty directory" */
@@ -663,9 +664,9 @@ static int adb_open(const char *path, struct fuse_file_info *fi)
     cout << "-- adb_open --" << path_string << " " << local_path_string << "\n";
     if (!fileTruncated[path_string]){
         queue<string> output;
-        string command = "ls -l -a -d '";
+        string command = "ls -l -a -d \\\"";
         command.append(path_string);
-        command.append("'");
+        command.append("\\\"");
         cout << command<<"\n";
         output = adb_shell(command);
         vector<string> output_chunk = make_array(output.front());
@@ -810,9 +811,9 @@ static int adb_truncate(const char *path, off_t size) {
 
     queue<string> output;
     cout << "adb_truncate" << endl;
-    string command = "ls -l -a -d '";
+    string command = "ls -l -a -d \\\"";
     command.append(path_string);
-    command.append("'");
+    command.append("\\\"");
     cout << command << "\n";
     output = adb_shell(command);
     vector<string> output_chunk = make_array(output.front());
@@ -970,9 +971,9 @@ static int adb_readlink(const char *path, char *buf, size_t size)
 
     if (fileData.find(path_string) ==  fileData.end()
 	|| fileData[path_string].timestamp + 30 < time(NULL)) {
-        string command = "ls -l -a -d '";
+        string command = "ls -l -a -d \\\"";
         command.append(path_string);
-        command.append("'");
+        command.append("\\\"");
         output = adb_shell(command);
         if (output.empty())
             return -EINVAL;

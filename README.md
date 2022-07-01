@@ -1,5 +1,11 @@
 This variant of adbfs works even WITHOUT having root access (busybox) on your phone!
 
+This variant actually uses root! The base project of this project doesn't work anymore.
+
+This project also depends con adb-root:
+
+https://github.com/memeruiz/adb-root
+
 Instructions:
 =============
 
