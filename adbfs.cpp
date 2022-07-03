@@ -83,6 +83,29 @@
 #include <pwd.h>
 #include <grp.h>
 
+
+#define KRED  "\x1B[31m"
+#define KWHT  "\x1B[37m"
+
+#define PATH_T "\\\""
+#define LS_LONG "ls -l -a -d " PATH_T
+#define LS_LONG_T PATH_T
+#define LS_SHORT "ls -l -a " PATH_T
+#define LS_SHORT_T PATH_T
+#define RM_R "rm -rf " PATH_T
+#define RM_R_T PATH_T
+#define RM "rm " PATH_T
+#define RM_T PATH_T
+#define TOUCH "touch " PATH_T
+#define TOUCH_T PATH_T
+#define MV "mv " PATH_T
+#define MV_T1 PATH_T PATH_T
+#define MV_T2 PATH_T
+#define RMDIR "rmdir " PATH_T
+#define RMDIR_T PATH_T
+#define MKDIR "mkdir " PATH_T
+#define MKDIR_T PATH_T
+
 void handler(int sig) {
   void *array[10];
   size_t size;
@@ -129,7 +152,7 @@ struct adb_config {
 };
 
 static struct fuse_opt adb_opts[] = {
-    { "rescan", offsetof(struct adb_config, rescan), true },
+    { "rescan", offsetof(struct adb_config, rescan), false },
     FUSE_OPT_END
 };
 
@@ -166,8 +189,8 @@ queue<string> adb_shell(const string& command, bool getStderr = false)
     string actual_command;
     actual_command.assign(command);
     //adb_shell_escape_command(actual_command);
-    actual_command.insert(0, "adb shell \"su -c \'");
-    actual_command.append("\'\"");
+    actual_command.insert(0, "adb shell su -c \"");
+    actual_command.append("\"");
     if (getStderr) actual_command.append(" 2>&1");
     return exec_command(actual_command);
 }
@@ -182,8 +205,8 @@ queue<string> adb_shell(const string& command, bool getStderr = false)
  */
 void shell_escape_command(string& cmd)
 {
-    string_replacer(cmd,"\\","\\\\");
-    string_replacer(cmd,"'","\\'");
+  //string_replacer(cmd,"\\","\\\\");
+    //string_replacer(cmd,"'","\\'");
     string_replacer(cmd,"`","\\`");
 }
 
@@ -197,7 +220,6 @@ void shell_escape_command(string& cmd)
  */
 void adb_shell_escape_command(string& cmd)
 {
-    string_replacer(cmd," ","\\ ");
     string_replacer(cmd,"\\","\\\\");
     string_replacer(cmd,"(","\\(");
     string_replacer(cmd,")","\\)");
@@ -228,8 +250,9 @@ void adb_shell_escape_command(string& cmd)
  */
 void shell_escape_path(string &path)
 {
-  string_replacer(path, "'", "'\\''");
-  string_replacer(path, "\"", "\\\"");
+  string_replacer(path, " ", "\\ ");
+  string_replacer(path, "'", "\\'");
+                             //string_replacer(path, "\"", "\\\"");
 }
 
 /**
@@ -239,9 +262,10 @@ void shell_escape_path(string &path)
    Also set up a callback to cleanup after ourselves on clean shutdown.
  */
 void cleanupTmpDir(void) {
-    string command = "rm -rf ";
-    command.append(tempDirPath);
-    shell(command);
+  string command = RM_R;
+  command.append(tempDirPath);
+  command.append(RM_R_T);
+  shell(command);
 }
 
 void makeTmpDir(void) {
@@ -264,12 +288,12 @@ void makeTmpDir(void) {
 void adb_push_pull_cmd(string& cmd, const bool push,
 		       const string& local_path, const string& remote_path)
 {
-    cmd.assign("adb-root.py ");
-    cmd.append((push ? "push '" : "pull '"));
+    cmd.assign("adb-root.py -vvvvvv ");
+    cmd.append((push ? "push " : "pull "));
     cmd.append((push ? local_path : remote_path));
-    cmd.append("' '");
+    cmd.append(" ");
     cmd.append((push ? remote_path : local_path));
-    cmd.append("'");
+    cmd.append("");
 }
 
 /**
@@ -306,7 +330,7 @@ queue<string> adb_push(const string& local_source,
     string cmd;
     adb_push_pull_cmd(cmd, true, local_source, remote_destination);
     queue<string> res = exec_command(cmd);
-    invalidateCache(remote_destination);
+    //invalidateCache(remote_destination);
     return res;
 }
 
@@ -418,16 +442,19 @@ static int adb_getattr(const char *path, struct stat *stbuf)
     memset(stbuf, 0, sizeof(struct stat));
     queue<string> output;
     string path_string;
+    string path_string2;
     path_string.assign(path);
+    path_string2.assign(path);
     shell_escape_path(path_string);
     // TODO /caching?
     //
     vector<string> output_chunk;
-    if (fileData.find(path_string) ==  fileData.end()
-	|| fileData[path_string].timestamp + 30 < time(NULL)) {
-        string command = "ls -l -a -d \\\"";
+    if (fileData.find(path_string2) ==  fileData.end()
+	|| fileData[path_string2].timestamp + 30 < time(NULL)) {
+      cout<<"Not in cache"<<endl;
+        string command = LS_LONG;
         command.append(path_string);
-        command.append("\\\"");
+        command.append(LS_LONG_T);
         output = adb_shell(command, true);
         if (output.empty()) return -EAGAIN; /* no phone */
         // error format: "/sbin/healthd: Permission denied"
@@ -436,25 +463,36 @@ static int adb_getattr(const char *path, struct stat *stbuf)
             (!output.front().compare(output.front().length() - sizeof(PERMISSION_ERR_MSG) + 1,
                                     sizeof(PERMISSION_ERR_MSG) - 1, PERMISSION_ERR_MSG)))
         {
-            fileData[path_string].statOutput.erase();
+            fileData[path_string2].statOutput.erase();
         } else {
             output_chunk = make_array(output.front());
-            fileData[path_string].statOutput = output.front();
+            fileData[path_string2].statOutput = output.front();
         }
-        fileData[path_string].timestamp = time(NULL);
+        fileData[path_string2].timestamp = time(NULL);
     } else{
-        output_chunk = make_array(fileData[path_string].statOutput);
+      for(const auto& elem : fileData){
+        cout << elem.first << "  :::::  " << elem.second.statOutput <<endl;
+      }
+      cout<<"In cache: "<< path_string<<endl;
+        output_chunk = make_array(fileData[path_string2].statOutput);
         cout << "from cache " << path << "\n";
     }
-    if (fileData[path_string].statOutput.empty()) {
+    if (fileData[path_string2].statOutput.empty()) {
         // return empty structure - file exists, but no info available
         stbuf->st_mode = S_IFREG;
         return res;
     }
 
+    cout << "test1: " << endl;
+
+    for (int i=0; i < output_chunk.size(); i++){
+      cout << output_chunk[i] << " ";
+    }
+    cout << endl;
     if(!is_valid_ls_output(output_chunk[0])) {
         return -ENOENT;
     }
+    cout << "test2" <<endl;
 
     //
     // ls -lad explained
@@ -579,10 +617,13 @@ size_t find_nth(int n, const string& substr, const string& corpus) {
 static int adb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     off_t offset, struct fuse_file_info *fi)
 {
+  cout<<endl<<endl<<"READDIR"<<endl<<endl;
     (void) offset;
     (void) fi;
     string path_string;
     string local_path_string;
+    string fname_l2;
+    string fname_n2;
     path_string.assign(path);
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
@@ -592,9 +633,9 @@ static int adb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     shell_escape_path(path_string);
 
     queue<string> output;
-    string command = "ls -l -a \\\"";
+    string command = LS_SHORT;
     command.append(path_string);
-    command.append("\\\"");
+    command.append(LS_SHORT_T);
     output = adb_shell(command);
 
     /* cannot tell between "no phone" and "empty directory" */
@@ -611,10 +652,12 @@ static int adb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                                             sizeof(PERMISSION_ERR_MSG) - 1, PERMISSION_ERR_MSG))) {
                     size_t nameStart = output.front().rfind("/") + 1;
                     const string& fname_l = output.front().substr(nameStart, output.front().find("' ") - nameStart);
-                    cout << "Adding file:" << fname_l << ":" << endl;
-                    filler(buf, fname_l.c_str(), NULL, 0);
+                    fname_l2.assign(output.front().substr(nameStart, output.front().find("' ") - nameStart));
+                    //shell_escape_path(fname_l2);
+                    cout << "Adding file:" << fname_l2 << ":" << endl;
+                    filler(buf, fname_l2.c_str(), NULL, 0);
                     const string& path_string_c = path_string
-                        + (path_string == "/" ? "" : "/") + fname_l;
+                        + (path_string == "/" ? "" : "/") + fname_l2;
 
                     cout << "caching " << path_string_c << " = " << output.front() <<  endl;
                     fileData[path_string_c].statOutput.erase();
@@ -626,10 +669,14 @@ static int adb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 size_t nameStart = output.front().find_first_of(":") + 4;
                 const string& fname_l = output.front().substr(nameStart);
                 const string fname_n = fname_l.substr(0, fname_l.find(" -> "));
-                cout << "Adding file:" << fname_n <<":" << endl;
-                filler(buf, fname_n.c_str(), NULL, 0);
+
+                fname_n2.assign(fname_n);
+                //shell_escape_path(fname_n2);
+
+                cout << "Adding file:" << fname_n2 <<":" << endl;
+                filler(buf, fname_n2.c_str(), NULL, 0);
                 const string path_string_c = path_string
-                    + (path_string == "/" ? "" : "/") + fname_n;
+                    + (path_string == "/" ? "" : "/") + fname_n2;
 
                 cout << "caching " << path_string_c << " = " << output.front() <<  endl;
                 fileData[path_string_c].statOutput = output.front();
@@ -649,6 +696,7 @@ static int adb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int adb_open(const char *path, struct fuse_file_info *fi)
 {
     string path_string;
+    string path_string2;
     string local_path_string;
     path_string.assign(path);
     local_path_string = tempDirPath;
@@ -658,15 +706,21 @@ static int adb_open(const char *path, struct fuse_file_info *fi)
     string filehandle_path = local_path_string;
 
     path_string.assign(path);
+    path_string2.assign(path);
     shell_escape_path(path_string);
     shell_escape_path(local_path_string);
 
     cout << "-- adb_open --" << path_string << " " << local_path_string << "\n";
-    if (!fileTruncated[path_string]){
+    cout << "-- adb_open --" << path_string2 << " " << local_path_string << "\n";
+    for(const auto& elem : fileTruncated){
+      cout << elem.first << "  :::::  " << elem.second <<endl;
+    }
+    if (!fileTruncated[path_string2]){
+      cout << "Not truncated"<<endl;
         queue<string> output;
-        string command = "ls -l -a -d \\\"";
+        string command = LS_LONG;
         command.append(path_string);
-        command.append("\\\"");
+        command.append(LS_LONG_T);
         cout << command<<"\n";
         output = adb_shell(command);
         vector<string> output_chunk = make_array(output.front());
@@ -682,7 +736,8 @@ static int adb_open(const char *path, struct fuse_file_info *fi)
         shell_escape_path(local_path_string);
         adb_pull(path_string,local_path_string);
     } else {
-        fileTruncated[path_string] = false;
+      cout << "Truncated"<<endl;
+        fileTruncated[path_string2] = false;
     }
 
     fi->fh = open(filehandle_path.c_str(), fi->flags);
@@ -728,8 +783,10 @@ static int adb_write(const char *path, const char *buf, size_t size, off_t offse
 
 static int adb_flush(const char *path, struct fuse_file_info *fi) {
     string path_string;
+    string path_string2;
     string local_path_string;
     path_string.assign(path);
+    path_string2.assign(path);
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
@@ -741,10 +798,11 @@ static int adb_flush(const char *path, struct fuse_file_info *fi) {
     int flags = fi->flags;
     int fd = fi->fh;
     cout << "flag is: "<< flags <<"\n";
-    invalidateCache(path_string);
+    invalidateCache(path_string2);
     if (filePendingWrite[fd]) {
         filePendingWrite[fd] = false;
         adb_push(local_path_string, path_string);
+        invalidateCache(path_string2);
         adb_shell("sync");
         if (adbfs_conf.rescan) adb_rescan_file(path_string);
     }
@@ -784,9 +842,9 @@ static int adb_utimens(const char *path, const struct timespec ts[2]) {
     shell_escape_path(path_string);
 
     queue<string> output;
-    string command = "touch '";
+    string command = TOUCH;
     command.append(path_string);
-    command.append("'");
+    command.append(TOUCH_T);
     cout << command<<"\n";
     adb_shell(command);
 
@@ -798,42 +856,54 @@ static int adb_utimens(const char *path, const struct timespec ts[2]) {
 
 static int adb_truncate(const char *path, off_t size) {
     string path_string;
+    string path_string2;
     string local_path_string;
+    string local_path_string2;
     path_string.assign(path);
-    fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
+    path_string2.assign(path);
+    fileData[path_string2].timestamp = fileData[path_string2].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string2.assign(path);
     shell_escape_path(path_string);
+    local_path_string2=local_path_string;
     shell_escape_path(local_path_string);
 
 
     queue<string> output;
-    cout << "adb_truncate" << endl;
-    string command = "ls -l -a -d \\\"";
+    cout <<endl<<endl<<"------"<<endl << "adb_truncate" << endl;
+    string command = LS_LONG;
     command.append(path_string);
-    command.append("\\\"");
+    command.append(LS_LONG_T);
     cout << command << "\n";
     output = adb_shell(command);
     vector<string> output_chunk = make_array(output.front());
+    cout<<"output chunk"<<endl;
+    for (int i=0; i < output_chunk.size(); i++){
+      cout << output_chunk[i] << " ";
+    }
+    cout << endl;
     if (output_chunk[0][0] == '/'){
         adb_pull(path_string,local_path_string);
     }
 
-    fileTruncated[path_string] = true;
+    fileTruncated[path_string2] = true;
 
-    invalidateCache(path_string);
+    invalidateCache(path_string2);
 
-    cout << "truncate[path=" << local_path_string << "][size=" << size << "]" << endl;
+    cout << "truncate[path=" << local_path_string2 << "][size=" << size << "]" << endl;
 
-    return truncate(local_path_string.c_str(),size);
+    return truncate(local_path_string2.c_str(),size);
 }
 
 static int adb_mknod(const char *path, mode_t mode, dev_t rdev) {
     string path_string;
+    string path_string2;
     string local_path_string;
     path_string.assign(path);
+    path_string2.assign(path);
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
@@ -848,16 +918,18 @@ static int adb_mknod(const char *path, mode_t mode, dev_t rdev) {
     adb_push(local_path_string,path_string);
     adb_shell("sync");
 
-    invalidateCache(path_string);
+    invalidateCache(path_string2);
 
     return 0;
 }
 
 static int adb_mkdir(const char *path, mode_t mode) {
     string path_string;
+    string path_string2;
     string local_path_string;
     path_string.assign(path);
-    fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
+    path_string2.assign(path);
+    fileData[path_string2].timestamp = fileData[path_string2].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
@@ -866,11 +938,11 @@ static int adb_mkdir(const char *path, mode_t mode) {
     shell_escape_path(path_string);
 
     string command;
-    command.assign("mkdir '");
+    command.assign(MKDIR);
     command.append(path_string);
-    command.append("'");
+    command.append(MKDIR_T);
     adb_shell(command);
-    invalidateCache(path_string);
+    invalidateCache(path_string2);
     return 0;
 }
 
@@ -890,11 +962,13 @@ static int adb_rename(const char *from, const char *to) {
     shell_escape_path(to_string);
 
 
-    string command = "mv '";
+    string command = MV;
     command.append(from_string);
-    command.append("' '");
+    command.append(MV_T2);
+    command.append(" ");
+    command.append(MV_T2);
     command.append(to_string);
-    command.append("'");
+    command.append(MV_T2);
     cout << "Renaming " << from << " to " << to <<"\n";
     adb_shell(command);
     if (adbfs_conf.rescan) {
@@ -908,9 +982,11 @@ static int adb_rename(const char *from, const char *to) {
 
 static int adb_rmdir(const char *path) {
     string path_string;
+    string path_string2;
     string local_path_string;
     path_string.assign(path);
-    fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
+    path_string2.assign(path);
+    fileData[path_string2].timestamp = fileData[path_string2].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
@@ -920,22 +996,25 @@ static int adb_rmdir(const char *path) {
     shell_escape_path(local_path_string);
 
 
-    string command = "rmdir '";
+    string command = RMDIR;
     command.append(path_string);
-    command.append("'");
+    command.append(RMDIR_T);
     adb_shell(command);
     if (adbfs_conf.rescan) adb_rescan_dir_removed(path_string);
-    invalidateCache(path_string);
+    invalidateCache(path_string2);
 
     //rmdir(local_path_string.c_str());
     return 0;
 }
 
 static int adb_unlink(const char *path) {
+  cout<<"Unlink"<<endl;
     string path_string;
+    string path_string2;
     string local_path_string;
     path_string.assign(path);
-    fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
+    path_string2.assign(path);
+    fileData[path_string2].timestamp = fileData[path_string2].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
@@ -944,12 +1023,12 @@ static int adb_unlink(const char *path) {
     shell_escape_path(path_string);
     shell_escape_path(local_path_string);
 
-    string command = "rm '";
+    string command = RM;
     command.append(path_string);
-    command.append("'");
+    command.append(RM_T);
     adb_shell(command);
     if (adbfs_conf.rescan) adb_rescan_file(path_string);
-    invalidateCache(path_string);
+    invalidateCache(path_string2);
     unlink(local_path_string.c_str());
     return 0;
 }
@@ -958,6 +1037,7 @@ static int adb_readlink(const char *path, char *buf, size_t size)
 {
     cout << "adb_readlink" << endl;
     string path_string(path);
+    string path_string2(path);
     shell_escape_path(path_string);
 
     queue<string> output;
@@ -969,11 +1049,11 @@ static int adb_readlink(const char *path, char *buf, size_t size)
             num_slashes++;
     if (num_slashes >= 1) num_slashes--;
 
-    if (fileData.find(path_string) ==  fileData.end()
-	|| fileData[path_string].timestamp + 30 < time(NULL)) {
-        string command = "ls -l -a -d \\\"";
+    if (fileData.find(path_string2) ==  fileData.end()
+	|| fileData[path_string2].timestamp + 30 < time(NULL)) {
+        string command = LS_LONG;
         command.append(path_string);
-        command.append("\\\"");
+        command.append(LS_LONG_T);
         output = adb_shell(command);
         if (output.empty())
             return -EINVAL;
@@ -983,15 +1063,15 @@ static int adb_readlink(const char *path, char *buf, size_t size)
            (!output.front().compare(output.front().length() - sizeof(PERMISSION_ERR_MSG) + 1,
                                     sizeof(PERMISSION_ERR_MSG) - 1, PERMISSION_ERR_MSG)))
         {
-            fileData[path_string].statOutput.erase();
+            fileData[path_string2].statOutput.erase();
         } else {
-            fileData[path_string].statOutput = output.front();
+            fileData[path_string2].statOutput = output.front();
         }
-        fileData[path_string].timestamp = time(NULL);
+        fileData[path_string2].timestamp = time(NULL);
     } else{
         cout << "from cache " << path << "\n";
     }
-    string &res = fileData[path_string].statOutput;
+    string &res = fileData[path_string2].statOutput;
     if (res.empty()) {
         // file exists, but no info available
         return -EINVAL;
@@ -1046,12 +1126,12 @@ int main(int argc, char *argv[])
     adbfs_oper.release = adb_release;
     adbfs_oper.read= adb_read;
     adbfs_oper.write = adb_write;
-    adbfs_oper.utimens = adb_utimens;
+    adbfs_oper.utimens = adb_utimens; //
     adbfs_oper.truncate = adb_truncate;
     adbfs_oper.mknod = adb_mknod;
-    adbfs_oper.mkdir = adb_mkdir;
+    adbfs_oper.mkdir = adb_mkdir; //
     adbfs_oper.rename = adb_rename;
-    adbfs_oper.rmdir = adb_rmdir;
+    adbfs_oper.rmdir = adb_rmdir; //
     adbfs_oper.unlink = adb_unlink;
     adbfs_oper.readlink = adb_readlink;
     adb_shell("ls");

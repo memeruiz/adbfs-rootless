@@ -62,6 +62,7 @@ vector<string> make_array(const string&, const string&);
 string& string_replacer(string&, const string&, const string&);
 
 vector<string> make_array(const string& data, const string& delimiters = " "){
+  cout << data << endl;
     vector<string> result;
     if (data.size() < 1) return result;
     //string delimiters = " ";
@@ -164,13 +165,18 @@ queue<string> exec_command(const string& command)
     while ( fgets( buff, sizeof buff, fp ) != NULL && !feof(fp) )
     {
         tmp_string.assign(buff);
+        cout << "new buff: "<< tmp_string << endl;
         while (tmp_string.size() > 0 &&
                (tmp_string[tmp_string.size() - 1] == '\n' ||
                 tmp_string[tmp_string.size() - 1] == '\r')) {
           tmp_string.erase(tmp_string.size()-1);
+          cout<< tmp_string;
         }
+        cout << endl;
+        cout<< tmp_string << endl;
         output.push(tmp_string);
     }
+    cout<< "Exec finished"<<endl;
 
     pclose( fp );
 
